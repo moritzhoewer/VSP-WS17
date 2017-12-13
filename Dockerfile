@@ -55,6 +55,7 @@ RUN \
         g++-multilib \
         git \
         graphviz \
+        htop \
         libpcre3 \
         parallel \
         pcregrep \
@@ -69,6 +70,7 @@ RUN \
         screen \
         subversion \
         sudo \
+        tshark \
         unzip \
         vim-common \
         wget \
