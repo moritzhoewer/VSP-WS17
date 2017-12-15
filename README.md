@@ -25,3 +25,7 @@ cd vslab-riot
 git submodule update --init
 make -C src clean all
 ```
+
+## Problems?
+
+Please don't hesitate to open an issue to report any bugs or problems related to source code and documentation. But don't ask for a solution to the exercise :)
