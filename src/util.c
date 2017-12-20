@@ -150,6 +150,12 @@ int net_init(kernel_pid_t main)
         LOG_DEBUG("%s: got IP address: %s\n", __func__, ip_addr_str);
     }
 
+    bool autocca = 0;
+    int ret = gnrc_netapi_set(gnrc_netif_iter(NULL)->pid, NETOPT_AUTOCCA, 0, &autocca, sizeof(autocca));
+    if (ret < 0) {
+        printf("Error setting AUTOCCA returned with %i\n", ret);
+    }
+    
     sock_udp_ep_t local;
     memset(&local, 0, sizeof(sock_udp_ep_t));
     local.family = AF_INET6;
