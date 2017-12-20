@@ -150,10 +150,21 @@ int net_init(kernel_pid_t main)
         LOG_DEBUG("%s: got IP address: %s\n", __func__, ip_addr_str);
     }
 
+    kernel_pid_t iface = gnrc_netif_iter(NULL)->pid;
+
     bool autocca = 0;
-    int ret = gnrc_netapi_set(gnrc_netif_iter(NULL)->pid, NETOPT_AUTOCCA, 0, &autocca, sizeof(autocca));
+    int ret = gnrc_netapi_set(iface, NETOPT_AUTOCCA, 0, &autocca, sizeof(autocca));
     if (ret < 0) {
-        printf("Error setting AUTOCCA returned with %i\n", ret);
+        LOG_ERROR("%s: failed setting AUTOCCA (%i)\n", __func__, ret);
+    }
+
+    int16_t txp = 20;
+    ret = gnrc_netapi_get(iface, NETOPT_TX_POWER, 0, &txp, sizeof(txp));
+    if (ret < 0) {
+        LOG_ERROR("%s: failed setting TXPOWER (%i)\n", __func__, ret);
+    }
+    else {
+        LOG_DEBUG("%s: TX-Power: %" PRIi16 "dBm ", __func__, txp);
     }
     
     sock_udp_ep_t local;
