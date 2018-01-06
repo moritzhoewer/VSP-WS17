@@ -107,6 +107,12 @@ int main(void)
 			// hellou thats me, immer wieder
 		
 			// is event aktiv? dann sende
+			// immer ip
+			
+			int16_t mean = get_exponential_mean(); // <- this function is not part of the API
+			if (broadcast_sensor(mean) < 0) {
+				printf("%s: failed\n", __func__);
+			}
 			// 
             break;
         case ELECT_BROADCAST_EVENT:
@@ -117,8 +123,12 @@ int main(void)
 			andre ips speichern
 			timeout wird resettet wenn leader da
 			wenn leader nich da dann "oh oh"
-             * @todo implement
-             */
+             * @todo implement */
+			 if(coap_get_sensor()>= meineip)
+				 // strings vergleichen
+			ipv6_addr_t node_ip;
+			get_node_ip_addr(&node_ip);
+             
             break;
         case ELECT_LEADER_ALIVE_EVENT:
             LOG_DEBUG("+ leader event.\n");
@@ -156,6 +166,10 @@ int main(void)
 			
              * @todo implement
              */
+			 ipv6_addr_t leader_ip;
+				if (coap_put_node(leader_ip, node_ip) == 0) {
+			printf("Success\n");
+}
             break;
         case ELECT_LEADER_THRESHOLD_EVENT:
             LOG_DEBUG("+ leader threshold event.\n");
