@@ -104,37 +104,56 @@ int main(void)
         switch (m.type) {
         case ELECT_INTERVAL_EVENT:
             LOG_DEBUG("+ interval event.\n");
-            /**
-             * @todo implement
-             */
+			// hellou thats me, immer wieder
+		
+			// is event aktiv? dann sende
+			// 
             break;
         case ELECT_BROADCAST_EVENT:
             LOG_DEBUG("+ broadcast event, from [%s]", (char *)m.content.ptr);
-            /**
+            /** array aufmachen
+			* kram rausscheissen
+			liste checken
+			andre ips speichern
+			timeout wird resettet wenn leader da
+			wenn leader nich da dann "oh oh"
              * @todo implement
              */
             break;
         case ELECT_LEADER_ALIVE_EVENT:
             LOG_DEBUG("+ leader event.\n");
             /**
+			neue ip? neuer leader? broadcast
+			wenn ich nich dann false
+			man kann abschicken
+			ip rausschicken auf BC 
+			
              * @todo implement
              */
             break;
         case ELECT_LEADER_TIMEOUT_EVENT:
             LOG_DEBUG("+ leader timeout event.\n");
             /**
+			höchste ip?
+			nüscht schicken
+			elect intervall abschalten
              * @todo implement
              */
             break;
         case ELECT_NODES_EVENT:
             LOG_DEBUG("+ nodes event, from [%s].\n", (char *)m.content.ptr);
             /**
+			senden? sonst ip rausschicken
+			leader da? BOOL
              * @todo implement
              */
             break;
         case ELECT_SENSOR_EVENT:
             LOG_DEBUG("+ sensor event, value=%s\n",  (char *)m.content.ptr);
             /**
+			kommen werte an? weiterleiten an coap
+			kann man auch abspeichern...
+			
              * @todo implement
              */
             break;
