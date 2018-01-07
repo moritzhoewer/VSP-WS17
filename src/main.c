@@ -95,6 +95,8 @@ typedef enum {
   DISCOVER, CLIENT, COORDINATOR
 } State;
 
+#define u (16)
+
 int main(void)
 {
     /* this should be first */
@@ -110,6 +112,11 @@ int main(void)
     ipv6_addr_t coordinatorIP; // stores the ip of the coordinator
     int receivedIPCounter = 0; // stores how many ip broadcasts with ips were received
     bool receivedRequestOrBroadcast = false; // stores if an request was received
+
+    // Variables needed only for coordinator
+    ipv6_addr_t clients[ELECT_NODES_NUM];
+    int clientCnt = 0;
+    int meanSensorValue = -1;
 
     // read own ip
     get_node_ip_addr(&myIP); // TODO: error handling?
@@ -156,24 +163,32 @@ int main(void)
             break;
         case ELECT_LEADER_TIMEOUT_EVENT:
             LOG_DEBUG("+ leader timeout event.\n");
-            if(!receivedRequestOrBroadcast) {
-              // coordinator died
-              ipv6_addr_set_unspecified(&coordinatorIP);
-              state = DISCOVER;
-              broadcastIP = true;
-              broadcast_id(&myIP);
+            if(state != COORDINATOR){
+              if(!receivedRequestOrBroadcast) {
+                // coordinator died
+                ipv6_addr_set_unspecified(&coordinatorIP);
+                state = DISCOVER;
+                broadcastIP = true;
+                broadcast_id(&myIP);
+              }
             }
             // reset flag
             receivedRequestOrBroadcast = false;
             break;
         case ELECT_NODES_EVENT:
             LOG_DEBUG("+ nodes event, from [%s].\n", (char *)m.content.ptr);
-            // TODO: store node
+            if(clientCnt < ELECT_NODES_NUM){
+              ipv6_addr_from_str(clients + clientCnt, m.content.ptr);
+              clientCnt++;
+            } else {
+              //TODO: error handling too many clients
+            }
             break;
         case ELECT_SENSOR_EVENT:
             LOG_DEBUG("+ sensor event, value=%s\n",  (char *)m.content.ptr);
-            // TODO: update sliding mean
-            // TODO: broadcast mean sensor value
+            int16_t value = (int16_t)strtol((char *)m.content.ptr, NULL, 10);
+            meanSensorValue = (u-1)/u * meanSensorValue + 1/u * value;
+            broadcast_sensor(meanSensorValue);
             break;
         case ELECT_LEADER_THRESHOLD_EVENT:
             LOG_DEBUG("+ leader threshold event.\n");
@@ -183,13 +198,14 @@ int main(void)
                 if(broadcastIP){
                   // we are coordinator
                   state = COORDINATOR;
-                  memcpy(&coordinatorIP, &myIP, sizeof(coordinatorIP));
-                  // TODO: reset stored nodes
-                  // TODO: reset mean sensor value
+                  coordinatorIP = myIP;
+                  clients[0] = myIP;
+                  clientCnt = 1;
+                  meanSensorValue = sensor_read();
                 } else {
                   // someone else is coordinator
                   state = CLIENT;
-                  memcpy(&coordinatorIP, &receivedIP, sizeof(coordinatorIP));
+                  coordinatorIP = receivedIP;
                   coap_put_node(receivedIP, myIP);
                 }
               }
