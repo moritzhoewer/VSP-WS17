@@ -127,9 +127,16 @@ int main(void)
         switch (m.type) {
         case ELECT_INTERVAL_EVENT:
             LOG_DEBUG("+ interval event.\n");
-			        if(broadcastIP){
+            if(state == DISCOVER) {
+			        if(broadcastIP) {
                 broadcast_id(&myIP);
               }
+            } else if(state == COORDINATOR) {
+              // Query all clients for their sensor value
+              for(int i = 0; i < clientCnt; i++){
+                coap_get_sensor(clients[i]);
+              }
+            }
             break;
         case ELECT_BROADCAST_EVENT:
             LOG_DEBUG("+ broadcast event, from [%s]", (char *)m.content.ptr);
