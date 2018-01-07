@@ -107,6 +107,7 @@ int main(void)
     bool broadcastIP = true; // should we broadcast our ip?
     ipv6_addr_t myIP; // stores our ip
     ipv6_addr_t receivedIP; // stores the latest received ip
+    ipv6_addr_t coordinatorIP; // stores the ip of the coordinator
     int receivedIPCounter = 0; // stores how many ip broadcasts with ips were received
     bool receivedRequestOrBroadcast = false; // stores if an request was received
 
@@ -128,10 +129,15 @@ int main(void)
             receivedRequestOrBroadcast = true;
 
             if(state != DISCOVER) {
-              // someone joined or something
-              // fall back to DISCOVER
-              state = DISCOVER;
-              broadcastIP = true;
+              // check if broadcast came from coordinator
+              if(ipv6_addr_cmp(&coordinatorIP, &receivedIP) != 0) {
+                // someone joined or something
+                // fall back to DISCOVER
+                ipv6_addr_set_unspecified(&coordinatorIP);
+                state = DISCOVER;
+                broadcastIP = true;
+                broadcast_id(&myIP);
+              }
             }
             // store IP
             ipv6_addr_from_str(&receivedIP, m.content.ptr);
@@ -152,6 +158,7 @@ int main(void)
             LOG_DEBUG("+ leader timeout event.\n");
             if(!receivedRequestOrBroadcast) {
               // coordinator died
+              ipv6_addr_set_unspecified(&coordinatorIP);
               state = DISCOVER;
               broadcastIP = true;
               broadcast_id(&myIP);
@@ -176,11 +183,13 @@ int main(void)
                 if(broadcastIP){
                   // we are coordinator
                   state = COORDINATOR;
+                  memcpy(&coordinatorIP, &myIP, sizeof(coordinatorIP));
                   // TODO: reset stored nodes
                   // TODO: reset mean sensor value
                 } else {
                   // someone else is coordinator
                   state = CLIENT;
+                  memcpy(&coordinatorIP, &receivedIP, sizeof(coordinatorIP));
                   coap_put_node(receivedIP, myIP);
                 }
               }
