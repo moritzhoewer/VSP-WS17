@@ -91,6 +91,10 @@ int setup(void)
     return 0;
 }
 
+typedef enum {
+  DISCOVER, CLIENT, COORDINATOR
+} State;
+
 int main(void)
 {
     /* this should be first */
@@ -98,84 +102,93 @@ int main(void)
         return 1;
     }
 
+    // Variables
+    State state = DISCOVER; // global state
+    bool broadcastIP = true; // should we broadcast our ip?
+    ipv6_addr_t myIP; // stores our ip
+    ipv6_addr_t receivedIP; // stores the latest received ip
+    int receivedIPCounter = 0; // stores how many ip broadcasts with ips were received
+    bool receivedRequestOrBroadcast = false; // stores if an request was received
+
+    // read own ip
+    get_node_ip_addr(&myIP); // TODO: error handling?
+
     while(true) {
         msg_t m;
         msg_receive(&m);
         switch (m.type) {
         case ELECT_INTERVAL_EVENT:
             LOG_DEBUG("+ interval event.\n");
-			// hellou thats me, immer wieder
-		
-			// is event aktiv? dann sende
-			// immer ip
-			
-			int16_t mean = get_exponential_mean(); // <- this function is not part of the API
-			if (broadcast_sensor(mean) < 0) {
-				printf("%s: failed\n", __func__);
-			}
-			// 
+			        if(broadcastIP){
+                broadcast_id(&myIP);
+              }
             break;
         case ELECT_BROADCAST_EVENT:
             LOG_DEBUG("+ broadcast event, from [%s]", (char *)m.content.ptr);
-            /** array aufmachen
-			* kram rausscheissen
-			liste checken
-			andre ips speichern
-			timeout wird resettet wenn leader da
-			wenn leader nich da dann "oh oh"
-             * @todo implement */
-			 if(coap_get_sensor()>= meineip)
-				 // strings vergleichen
-			ipv6_addr_t node_ip;
-			get_node_ip_addr(&node_ip);
-             
+            receivedRequestOrBroadcast = true;
+
+            if(state != DISCOVER) {
+              // someone joined or something
+              // fall back to DISCOVER
+              state = DISCOVER;
+              broadcastIP = true;
+            }
+            // store IP
+            ipv6_addr_from_str(&receivedIP, m.content.ptr);
+            receivedIPCounter++;
+            int result = ipv6_addr_cmp(&myIP, &receivedIP);
+            if(result == 0){
+              // ips are equal ==> received own broadcast
+            } else if (result < 0) {
+              // recieved bigger IP ==> stop broadcasting
+              broadcastIP = false;
+            }
             break;
         case ELECT_LEADER_ALIVE_EVENT:
             LOG_DEBUG("+ leader event.\n");
-            /**
-			neue ip? neuer leader? broadcast
-			wenn ich nich dann false
-			man kann abschicken
-			ip rausschicken auf BC 
-			
-             * @todo implement
-             */
+            receivedRequestOrBroadcast = true;
             break;
         case ELECT_LEADER_TIMEOUT_EVENT:
             LOG_DEBUG("+ leader timeout event.\n");
-            /**
-			höchste ip?
-			nüscht schicken
-			elect intervall abschalten
-             * @todo implement
-             */
+            if(!receivedRequestOrBroadcast) {
+              // coordinator died
+              state = DISCOVER;
+              broadcastIP = true;
+              broadcast_id(&myIP);
+            }
+            // reset flag
+            receivedRequestOrBroadcast = false;
             break;
         case ELECT_NODES_EVENT:
             LOG_DEBUG("+ nodes event, from [%s].\n", (char *)m.content.ptr);
-            /**
-			senden? sonst ip rausschicken
-			leader da? BOOL
-             * @todo implement
-             */
+            // TODO: store node
             break;
         case ELECT_SENSOR_EVENT:
             LOG_DEBUG("+ sensor event, value=%s\n",  (char *)m.content.ptr);
-            /**
-			kommen werte an? weiterleiten an coap
-			kann man auch abspeichern...
-			
-             * @todo implement
-             */
-			 ipv6_addr_t leader_ip;
-				if (coap_put_node(leader_ip, node_ip) == 0) {
-			printf("Success\n");
-}
+            // TODO: update sliding mean
+            // TODO: broadcast mean sensor value
             break;
         case ELECT_LEADER_THRESHOLD_EVENT:
             LOG_DEBUG("+ leader threshold event.\n");
-            /**
-             * @todo implement
-             */
+            if(state == DISCOVER){
+              if(receivedIPCounter == 1) {
+                // only one IP received ==> coordinator is known
+                if(broadcastIP){
+                  // we are coordinator
+                  state = COORDINATOR;
+                  // TODO: reset stored nodes
+                  // TODO: reset mean sensor value
+                } else {
+                  // someone else is coordinator
+                  state = CLIENT;
+                  coap_put_node(receivedIP, myIP);
+                }
+              }
+              // reset counter
+              receivedIPCounter = 0;
+            } else {
+              // TODO: what happens when we are not in DISCOVER?
+            }
             break;
         default:
             LOG_WARNING("??? invalid event (%x) ???\n", m.type);
