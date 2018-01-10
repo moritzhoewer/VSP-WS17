@@ -150,18 +150,20 @@ int main(void)
                 ipv6_addr_set_unspecified(&coordinatorIP);
                 state = DISCOVER;
                 broadcastIP = true;
-                broadcast_id(&myIP);
+ //               broadcast_id(&myIP);
               }
             }
-            // store IP
-            ipv6_addr_from_str(&receivedIP, m.content.ptr);
-            receivedIPCounter++;
-            int result = ipv6_addr_cmp(&myIP, &receivedIP);
-            if(result == 0){
-              // ips are equal ==> received own broadcast
-            } else if (result < 0) {
-              // recieved bigger IP ==> stop broadcasting
-              broadcastIP = false;
+	    if(state == DISCOVER){
+              // store IP
+              ipv6_addr_from_str(&receivedIP, m.content.ptr);
+              receivedIPCounter++;
+              int result = ipv6_addr_cmp(&myIP, &receivedIP);
+              if(result == 0){
+                // ips are equal ==> received own broadcast
+              } else if (result < 0) {
+                // recieved bigger IP ==> stop broadcasting
+                broadcastIP = false;
+              }
             }
             break;
         case ELECT_LEADER_ALIVE_EVENT:
@@ -184,18 +186,22 @@ int main(void)
             break;
         case ELECT_NODES_EVENT:
             LOG_DEBUG("+ nodes event, from [%s].\n", (char *)m.content.ptr);
-            if(clientCnt < ELECT_NODES_NUM){
-              ipv6_addr_from_str(clients + clientCnt, m.content.ptr);
-              clientCnt++;
-            } else {
-              //TODO: error handling too many clients
+            if(state == COORDINATOR){
+              if(clientCnt < ELECT_NODES_NUM){
+                ipv6_addr_from_str(clients + clientCnt, m.content.ptr);
+                clientCnt++;
+              } else {
+                //TODO: error handling too many clients
+              }
             }
             break;
         case ELECT_SENSOR_EVENT:
             LOG_DEBUG("+ sensor event, value=%s\n",  (char *)m.content.ptr);
-            int16_t value = (int16_t)strtol((char *)m.content.ptr, NULL, 10);
-            meanSensorValue = (u-1)/u * meanSensorValue + 1/u * value;
-            broadcast_sensor(meanSensorValue);
+            if (state == COORDINATOR){
+              int16_t value = (int16_t)strtol((char *)m.content.ptr, NULL, 10);
+              meanSensorValue = (u-1)/u * meanSensorValue + 1/u * value;
+              broadcast_sensor(meanSensorValue);
+            }
             break;
         case ELECT_LEADER_THRESHOLD_EVENT:
             LOG_DEBUG("+ leader threshold event.\n");
