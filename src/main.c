@@ -172,7 +172,7 @@ int main(void)
     // Variables needed only for coordinator
     ipv6_addr_t clients[ELECT_NODES_NUM];
     int clientCnt = 0;
-    int meanSensorValue = -1;
+    int16_t meanSensorValue = 0;
 
     // read own ip
     get_node_ip_addr(&myIP); // TODO: error handling?
@@ -191,10 +191,17 @@ int main(void)
                 broadcast_id(&myIP);
                 restartIntervalTimer();
             } else if(state == COORDINATOR) {
+              // reset sensor
+              meanSensorValue = sensor_read();
               // Query all clients for their sensor value
+              char addr_str[IPV6_ADDR_MAX_STR_LEN];
+              LOG_DEBUG("\n\n\nStarting Query...\n");
               for(int i = 0; i < clientCnt; i++){
                 coap_get_sensor(clients[i]);
+                ipv6_addr_to_str(addr_str, (clients + i), sizeof(addr_str));
+                LOG_DEBUG("Asking %s for sensor value.\n", addr_str);
               }
+              LOG_DEBUG("Query done.\n\n\n");
               restartIntervalTimer();
             }
             break;
@@ -223,26 +230,7 @@ int main(void)
                     coordinatorIP = receivedIP;
                 }
               }
-            } else if(state == CLIENT) {
-              // check if broadcast came from coordinator
-              if(ipv6_addr_cmp(&coordinatorIP, &receivedIP) == 0) {
-                //received message from coordinator
-                restartLeaderTimeout();
-              } else { 
-                // someone joined or something
-                if(ipv6_addr_cmp(&myIP, &receivedIP) < 0){
-                    coordinatorIP = receivedIP;
-                    state = ELECT;
-                    restartLeaderThreshold();
-                } else {
-                    coordinatorIP = myIP;
-                    state = DISCOVER;
-                
-                    restartIntervalTimer();
-                    restartLeaderThreshold();
-                }
-              }
-            } else if(state == COORDINATOR){
+            } else if(state == CLIENT || state == COORDINATOR){
                 // someone joined or something
                 if(ipv6_addr_cmp(&myIP, &receivedIP) < 0){
                     coordinatorIP = receivedIP;
@@ -274,9 +262,23 @@ int main(void)
         case ELECT_NODES_EVENT:
             LOG_DEBUG("+ nodes event, from [%s].\n", (char *)m.content.ptr);
             if(state == COORDINATOR){
-              if(clientCnt < ELECT_NODES_NUM){
-                ipv6_addr_from_str(clients + clientCnt, m.content.ptr);
-                clientCnt++;
+              if(clientCnt < ELECT_NODES_NUM) {
+                // store IP
+                ipv6_addr_from_str(&receivedIP, m.content.ptr);
+                
+                bool found = false;
+                 for(int i = 0; i < clientCnt; i++){
+                    if(ipv6_addr_cmp(clients + i, &receivedIP) == 0){
+                        found = true;
+                        break;
+                    }
+                }
+                
+                if(!found) {
+                    LOG_DEBUG("\n\nADDED %s to client list as #%i\n\n", (char *)m.content.ptr, clientCnt);
+                    ipv6_addr_from_str(clients + clientCnt, m.content.ptr);
+                    clientCnt++;
+                }
               } else {
                 //TODO: error handling too many clients
               }
@@ -286,7 +288,8 @@ int main(void)
             LOG_DEBUG("+ sensor event, value=%s\n",  (char *)m.content.ptr);
             if (state == COORDINATOR){
               int16_t value = (int16_t)strtol((char *)m.content.ptr, NULL, 10);
-              meanSensorValue = (u-1)/u * meanSensorValue + 1/u * value;
+              meanSensorValue = (u-1) * meanSensorValue / u + value / u;
+              LOG_DEBUG("\n\nmean=%i, value=%i\n\n", meanSensorValue, value);
               broadcast_sensor(meanSensorValue);
             }
             break;
@@ -297,8 +300,7 @@ int main(void)
                 // we are coordinator
                 state = COORDINATOR;
                 LOG_DEBUG("\n\nWE ARE COORDINATOR\n\n");
-                clients[0] = myIP;
-                clientCnt = 1;
+                clientCnt = 0;
                 meanSensorValue = sensor_read();
                 restartIntervalTimer();
               } else {
@@ -308,6 +310,7 @@ int main(void)
                 ipv6_addr_to_str(addr_str, &coordinatorIP, sizeof(addr_str));
                 LOG_DEBUG("\n\nWE ARE CLIENT\nCoordinator is %s\n\n", addr_str);
                 coap_put_node(coordinatorIP, myIP);
+                restartLeaderTimeout();
               }
             }
             break;

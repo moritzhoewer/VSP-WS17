@@ -29,6 +29,7 @@ endif
 DEVELHELP ?= 1
 CFLAGS += -DGCOAP_REQ_WAITING_MAX=$(NODES_NUM)
 CFLAGS += -DELECT_NODES_NUM=$(NODES_NUM)
+CFLAGS += -DLOG_LEVEL=LOG_ALL
 # Change this to 0 show compiler invocation lines by default:
 QUIET ?= 1
 
