@@ -92,10 +92,69 @@ int setup(void)
 }
 
 typedef enum {
-  DISCOVER, CLIENT, COORDINATOR
+  DISCOVER, ELECT, CLIENT, COORDINATOR
 } State;
 
 #define u (16)
+
+
+void startIntervalTimer(void){
+    // reset event timer offset
+    interval_event.event.offset = ELECT_MSG_INTERVAL;
+    // (re)schedule event message
+    evtimer_add_msg(&evtimer, &interval_event, thread_getpid());
+}
+
+void stopIntervalTimer(void){
+    // delete event
+    evtimer_del(&evtimer, &interval_event.event);
+}
+
+void restartIntervalTimer(void){
+    stopIntervalTimer();
+    startIntervalTimer();
+}
+
+
+
+void startLeaderTimeout(void){
+    // reset event timer offset
+    leader_timeout_event.event.offset = ELECT_LEADER_TIMEOUT;
+    // (re)schedule event message
+    evtimer_add_msg(&evtimer, &leader_timeout_event, thread_getpid());
+}
+
+void stopLeaderTimeout(void){
+    // delete event
+    evtimer_del(&evtimer, &leader_timeout_event.event);
+}
+
+void restartLeaderTimeout(void){
+    stopLeaderTimeout();
+    startLeaderTimeout();
+}
+
+
+
+
+void startLeaderThreshold(void){
+    // reset event timer offset
+    leader_threshold_event.event.offset = ELECT_LEADER_THRESHOLD;
+    // (re)schedule event message
+    evtimer_add_msg(&evtimer, &leader_threshold_event, thread_getpid());
+}
+
+void stopLeaderThreshold(void){
+    // delete event
+    evtimer_del(&evtimer, &leader_threshold_event.event);
+}
+
+void restartLeaderThreshold(void){
+    stopLeaderThreshold();
+    startLeaderThreshold();
+}
+
+
 
 int main(void)
 {
@@ -106,12 +165,9 @@ int main(void)
 
     // Variables
     State state = DISCOVER; // global state
-    bool broadcastIP = true; // should we broadcast our ip?
     ipv6_addr_t myIP; // stores our ip
     ipv6_addr_t receivedIP; // stores the latest received ip
     ipv6_addr_t coordinatorIP; // stores the ip of the coordinator
-    int receivedIPCounter = 0; // stores how many ip broadcasts with ips were received
-    bool receivedRequestOrBroadcast = false; // stores if an request was received
 
     // Variables needed only for coordinator
     ipv6_addr_t clients[ELECT_NODES_NUM];
@@ -121,6 +177,10 @@ int main(void)
     // read own ip
     get_node_ip_addr(&myIP); // TODO: error handling?
 
+    // assume we are coordinator
+    coordinatorIP = myIP;    
+    restartLeaderThreshold();
+    
     while(true) {
         msg_t m;
         msg_receive(&m);
@@ -128,61 +188,88 @@ int main(void)
         case ELECT_INTERVAL_EVENT:
             LOG_DEBUG("+ interval event.\n");
             if(state == DISCOVER) {
-			        if(broadcastIP) {
                 broadcast_id(&myIP);
-              }
+                restartIntervalTimer();
             } else if(state == COORDINATOR) {
               // Query all clients for their sensor value
               for(int i = 0; i < clientCnt; i++){
                 coap_get_sensor(clients[i]);
               }
+              restartIntervalTimer();
             }
             break;
         case ELECT_BROADCAST_EVENT:
             LOG_DEBUG("+ broadcast event, from [%s]", (char *)m.content.ptr);
-            receivedRequestOrBroadcast = true;
 
-            if(state != DISCOVER) {
+            // store IP
+            ipv6_addr_from_str(&receivedIP, m.content.ptr);
+            
+            if(state == DISCOVER){
+              if (ipv6_addr_cmp(&myIP, &receivedIP) < 0) {
+                // received bigger IP ==> stop broadcasting
+                state = ELECT;
+                coordinatorIP = receivedIP;
+                stopIntervalTimer();
+                restartLeaderThreshold();
+              }
+            } else if (state == ELECT){
+              int result = ipv6_addr_cmp(&coordinatorIP, &receivedIP);
+              if (result != 0) {
+                // IP changed, restart threshold
+                restartLeaderThreshold();
+                
+                if(result < 0){
+                    // change coordinatorIP
+                    coordinatorIP = receivedIP;
+                }
+              }
+            } else if(state == CLIENT) {
               // check if broadcast came from coordinator
-              if(ipv6_addr_cmp(&coordinatorIP, &receivedIP) != 0) {
+              if(ipv6_addr_cmp(&coordinatorIP, &receivedIP) == 0) {
+                //received message from coordinator
+                restartLeaderTimeout();
+              } else { 
                 // someone joined or something
-                // fall back to DISCOVER
-                ipv6_addr_set_unspecified(&coordinatorIP);
-                state = DISCOVER;
-                broadcastIP = true;
- //               broadcast_id(&myIP);
+                if(ipv6_addr_cmp(&myIP, &receivedIP) < 0){
+                    coordinatorIP = receivedIP;
+                    state = ELECT;
+                    restartLeaderThreshold();
+                } else {
+                    coordinatorIP = myIP;
+                    state = DISCOVER;
+                
+                    restartIntervalTimer();
+                    restartLeaderThreshold();
+                }
               }
-            }
-	    if(state == DISCOVER){
-              // store IP
-              ipv6_addr_from_str(&receivedIP, m.content.ptr);
-              receivedIPCounter++;
-              int result = ipv6_addr_cmp(&myIP, &receivedIP);
-              if(result == 0){
-                // ips are equal ==> received own broadcast
-              } else if (result < 0) {
-                // recieved bigger IP ==> stop broadcasting
-                broadcastIP = false;
-              }
+            } else if(state == COORDINATOR){
+                // someone joined or something
+                if(ipv6_addr_cmp(&myIP, &receivedIP) < 0){
+                    coordinatorIP = receivedIP;
+                    state = ELECT;
+                    restartLeaderThreshold();
+                } else {
+                    coordinatorIP = myIP;
+                    state = DISCOVER;
+                
+                    restartIntervalTimer();
+                    restartLeaderThreshold();
+                }
             }
             break;
         case ELECT_LEADER_ALIVE_EVENT:
             LOG_DEBUG("+ leader event.\n");
-            receivedRequestOrBroadcast = true;
+            restartLeaderTimeout();
             break;
         case ELECT_LEADER_TIMEOUT_EVENT:
             LOG_DEBUG("+ leader timeout event.\n");
-            if(state != COORDINATOR){
-              if(!receivedRequestOrBroadcast) {
-                // coordinator died
-                ipv6_addr_set_unspecified(&coordinatorIP);
-                state = DISCOVER;
-                broadcastIP = true;
-                broadcast_id(&myIP);
-              }
+            if(state == CLIENT){
+              // coordinator died
+              coordinatorIP = myIP;
+              state = DISCOVER;
+              restartIntervalTimer();
+              restartLeaderThreshold();
             }
-            // reset flag
-            receivedRequestOrBroadcast = false;
             break;
         case ELECT_NODES_EVENT:
             LOG_DEBUG("+ nodes event, from [%s].\n", (char *)m.content.ptr);
@@ -205,27 +292,23 @@ int main(void)
             break;
         case ELECT_LEADER_THRESHOLD_EVENT:
             LOG_DEBUG("+ leader threshold event.\n");
-            if(state == DISCOVER){
-              if(receivedIPCounter == 1) {
-                // only one IP received ==> coordinator is known
-                if(broadcastIP){
-                  // we are coordinator
-                  state = COORDINATOR;
-                  coordinatorIP = myIP;
-                  clients[0] = myIP;
-                  clientCnt = 1;
-                  meanSensorValue = sensor_read();
-                } else {
-                  // someone else is coordinator
-                  state = CLIENT;
-                  coordinatorIP = receivedIP;
-                  coap_put_node(receivedIP, myIP);
-                }
+            if(state == DISCOVER || state == ELECT) {
+              if(ipv6_addr_cmp(&myIP, &coordinatorIP) == 0){
+                // we are coordinator
+                state = COORDINATOR;
+                LOG_DEBUG("\n\nWE ARE COORDINATOR\n\n");
+                clients[0] = myIP;
+                clientCnt = 1;
+                meanSensorValue = sensor_read();
+                restartIntervalTimer();
+              } else {
+                // we are client
+                state = CLIENT;
+                char addr_str[IPV6_ADDR_MAX_STR_LEN];
+                ipv6_addr_to_str(addr_str, &coordinatorIP, sizeof(addr_str));
+                LOG_DEBUG("\n\nWE ARE CLIENT\nCoordinator is %s\n\n", addr_str);
+                coap_put_node(coordinatorIP, myIP);
               }
-              // reset counter
-              receivedIPCounter = 0;
-            } else {
-              // TODO: what happens when we are not in DISCOVER?
             }
             break;
         default:

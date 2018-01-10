@@ -26,7 +26,7 @@ endif
 # Set this to 1 to enable code in RIOT that does safety checking
 # which is not needed in a production environment but helps in the
 # development process:
-DEVELHELP ?= 0
+DEVELHELP ?= 1
 CFLAGS += -DGCOAP_REQ_WAITING_MAX=$(NODES_NUM)
 CFLAGS += -DELECT_NODES_NUM=$(NODES_NUM)
 # Change this to 0 show compiler invocation lines by default:
